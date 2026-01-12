@@ -10,7 +10,7 @@ from folium.features import DivIcon
 from streamlit.components.v1 import html as st_html
 
 # ========================== CONFIG ==========================
-TEMPLATE_PATH = "Sourcing base.xlsx"   # modèle Excel avec en-têtes
+TEMPLATE_PATH = "sotie_base.xlsx"   # modèle Excel avec en-têtes
 START_ROW = 11                         # 1re ligne de data dans le modèle
 
 PRIMARY = "#0b1d4f"
