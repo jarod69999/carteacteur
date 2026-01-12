@@ -785,39 +785,6 @@ def to_excel(df, template=TEMPLATE_PATH, start=START_ROW):
         ws.cell(i,9, r.get("Type de distance",""))
     bio = BytesIO(); wb.save(bio); bio.seek(0); return bio
 
-def to_simple(df, template="doc_base_contact_simple.xlsx", start=11):
-    """
-    Génère le fichier 'contact simple' dans le modèle :
-    Colonnes :
-      A = Raison sociale
-      B = Référent MOA
-      C = Contact MOA
-      D = Catégories
-    Les lignes commencent à start (=11).
-    """
-
-    # ouverture modèle
-    wb = load_workbook(template)
-    ws = wb.active
-
-    # on efface d'anciennes valeurs
-    for r in range(start, ws.max_row + 1):
-        for c in range(1, 5):
-            ws.cell(r, c).value = None
-
-    # remplissage
-    for i, (_, row) in enumerate(df.iterrows(), start=start):
-        ws.cell(i, 1, row.get("Raison sociale", ""))
-        ws.cell(i, 2, row.get("Référent MOA", ""))
-        ws.cell(i, 3, row.get("Contact MOA", ""))
-        ws.cell(i, 4, row.get("Catégories", ""))
-
-    # export
-    bio = BytesIO()
-    wb.save(bio)
-    bio.seek(0)
-    return bio
-
 
 # ===================== CARTE (Folium) =======================
 def make_map(df, base_coords, coords_dict, base_address):
@@ -943,69 +910,104 @@ label, p, span, div, textarea, input {
 
 """, unsafe_allow_html=True)
 
-# ===============================================================
-# APP
-# ===============================================================
+# ======================== INTERFACE =========================
+
+# --- CSS / STYLE (On garde ton style blanc) ---
+st.markdown("""
+<style>
+    .stApp { background-color: #FFFFFF !important; color: #000000 !important; }
+    h1, h2, h3 { color: #0b1d4f !important; font-family: "Inter", sans-serif; }
+    .stButton>button { background-color: #0b1d4f; color: white; border-radius: 4px; width: 100%; }
+    .css-card { background-color: #F8F9FA; padding: 20px; border-radius: 8px; border: 1px solid #E9ECEF; }
+    .stTextInput>div>div>input { border: 1px solid #ced4da; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- ENTÊTE ---
+st.title("📍 Outil de Sourcing MOA")
+st.markdown("---")
+
+# --- MISE EN PAGE 2 COLONNES ---
+main_col, side_col = st.columns([7, 3], gap="large")
+
+with main_col:
+    st.subheader("1. Données & Projet")
+    
+    # L'adresse est maintenant OBLIGATOIRE (puisque plus de mode simple)
+    base_address = st.text_input("🏠 Adresse du projet", 
+                                 placeholder="Ex : 10 rue de la Paix, 75000 Paris")
+    
+    file = st.file_uploader("📄 Fichier CSV (Export base)", type=["csv"])
+
+with side_col:
+    # Panneau de droite
+    st.image("Conseil-noir.jpg", width=150)
+    with st.container():
+        st.markdown("""<div class="css-card">""", unsafe_allow_html=True)
+        st.markdown("#### ⚙️ Réglages")
+        name_full = st.text_input("Nom Excel", "Sourcing_Complet")
+        name_map = st.text_input("Nom Carte", "Carte_Projet")
+        st.caption("Contactez JAROD en cas de bug.")
+        st.markdown("""</div>""", unsafe_allow_html=True)
 
 
-
-st.title("📍Sortie excel, Contacter JAROD en cas de problème")
-st.image("Conseil-noir.jpg", width=220)
-
-
-mode = st.radio("Choisir le mode :", ["🧾 Mode simple", "🚗 Mode enrichi (distances + carte)"], horizontal=True)
-base_address = st.text_input("🏠 Adresse du projet (CP + ville ou adresse complète)",
-                             placeholder="Ex : 33210 Langon  •  ou  17 Boulevard Allende 33210 Langon")
-
-file = st.file_uploader("📄 Fichier CSV", type=["csv"])
-
-name_full   = st.text_input("Nom du fichier Excel complet (sans extension)", "Sourcing_MOA")
-name_simple = st.text_input("Nom du fichier contact simple (sans extension)", "MOA_contact_simple")
-name_map    = st.text_input("Nom du fichier carte HTML (sans extension)", "Carte_MOA")
-
-generate_map = False
-if mode == "🚗 Mode enrichi (distances + carte)":
-    generate_map = st.button("🗺️ Générer la carte maintenant")
-
-if file and (mode == "🧾 Mode simple" or base_address):
-    try:
-        with st.spinner("⏳ Traitement en cours..."):
-            base_df = process_csv_to_df(file)       # ✅ Contact MOA e-mail déjà calculé (v12-style+)
-            if mode == "🚗 Mode enrichi (distances + carte)":
+# --- LOGIQUE DE TRAITEMENT ---
+if file:
+    if not base_address:
+        st.warning("⚠️ L'adresse du projet est obligatoire pour calculer les distances.")
+    else:
+        # On lance le calcul
+        with st.status("Traitement en cours...", expanded=True) as status:
+            try:
+                st.write("🔄 Lecture et nettoyage des données...")
+                # 1. On crée le DF de base
+                base_df = process_csv_to_df(file) 
+                
+                st.write("🌍 Calcul des distances et géolocalisation...")
+                # 2. On calcule les distances (C'est ici qu'on définit 'df')
                 df, base_coords, coords_dict = compute_distances(base_df, base_address)
-            else:
-                df, base_coords, coords_dict = base_df.copy(), None, {}
+                
+                status.update(label="✅ Terminé !", state="complete", expanded=False)
 
-        st.success("✅ Traitement terminé")
+                # --- AFFICHAGE DES RÉSULTATS ---
+                st.success(f"{len(df)} entreprises traitées.")
 
-        # contact simple
-        x1 = to_simple(base_df, template="doc_base_contact_simple.xlsx", start=11)
-        st.download_button("⬇️ Télécharger le contact simple",
-                   data=x1, file_name=f"{name_simple}.xlsx",
-                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                # Boutons de téléchargement
+                col_dl1, col_dl2 = st.columns(2)
+                
+                with col_dl1:
+                    # Excel
+                    excel_data = to_excel(df)
+                    st.download_button(
+                        "⬇️ Télécharger Excel Complet",
+                        data=excel_data,
+                        file_name=f"{name_full}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
 
-        if mode == "🚗 Mode enrichi (distances + carte)":
-            # Excel complet
-            x2 = to_excel(df)
-            st.download_button("⬇️ Télécharger l'Excel complet",
-                               data=x2, file_name=f"{name_full}.xlsx",
-                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                with col_dl2:
+                    # Carte HTML
+                    if base_coords:
+                        fmap = make_map(df, base_coords, coords_dict, base_address)
+                        html_map = map_to_html(fmap)
+                        st.download_button(
+                            "🗺️ Télécharger Carte Interactive",
+                            data=html_map,
+                            file_name=f"{name_map}.html",
+                            mime="text/html",
+                            use_container_width=True
+                        )
 
-            # Carte à la demande
-            if generate_map and base_coords:
-                fmap = make_map(df, base_coords, coords_dict, base_address)
-                htmlb = map_to_html(fmap)
-                st.download_button("📥 Télécharger la carte (HTML)",
-                                   data=htmlb, file_name=f"{name_map}.html", mime="text/html")
-                st_html(htmlb.getvalue().decode("utf-8"), height=520)
-                st.caption("🧭 Distances calculées à vol d’oiseau (géodésiques).")
+                # Aperçu visuel
+                st.markdown("---")
+                if base_coords:
+                    st_html(html_map.getvalue().decode("utf-8"), height=500)
+                
+                with st.expander("Voir les données brutes"):
+                    st.dataframe(df)
 
-        st.subheader("📋 Aperçu des données")
-        st.dataframe(df.head(12))
-
-    except Exception as e:
-        st.error(f"Erreur : {e}")
-
-
+            except Exception as e:
+                st.error(f"Une erreur est survenue : {e}")
 
 
