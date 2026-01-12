@@ -1,2 +1,8 @@
 streamlit
-openai
+pandas
+geopy
+folium
+streamlit-folium
+xlsxwriter
+openpyxl
+matplotlib
