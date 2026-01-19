@@ -15,7 +15,7 @@ START_ROW = 11                         # 1re ligne de data dans le modèle
 
 PRIMARY = "#0b1d4f"
 BG      = "#f5f0eb"
-st.set_page_config(page_title="MOA – v2 ", page_icon="📍", layout="wide")
+st.set_page_config(page_title="Choix_acteur ", page_icon="📍", layout="wide")
 # ===============================================================
 # KEEP ALIVE – empêche l'app de se mettre en sommeil (ping interne)
 # ===============================================================
@@ -140,15 +140,15 @@ def clean_internal_codes(addr: str) -> str:
     addr = re.sub(r"\s{2,}", " ", addr).strip(" ,.-")
     return addr
 
-
 @st.cache_data(show_spinner=False)
 def geocode(query: str):
     """
-    Géocode robuste v19 :
-    - Cas spécial : code postal FR seul (5 chiffres) -> CP, France
-    - Détection automatique du pays pour les adresses étrangères
-    - Répare les CP collés aux mots (ex : 'Hugo76600 le havre')
+    Géocode robuste v21 :
+    - Identité unifiée pour éviter le blocage Nominatim
+    - Affichage de l'erreur réelle en cas d'échec
     """
+    # ⚠️ REMPLACE CECI PAR TON EMAIL PRO POUR NE PLUS JAMAIS ETRE BLOQUÉ
+    MY_USER_AGENT = "app_sourcing_jarod6999" 
 
     if not query or not isinstance(query, str):
         return None
@@ -163,13 +163,13 @@ def geocode(query: str):
     q_low = q.lower().strip()
 
     # ================= 1) CAS SPECIAL : CP FR SEUL =================
-    # Exemple : "33210" -> on force "33210, France"
     if re.fullmatch(r"\d{5}", q_low):
-        geolocator = Nominatim(user_agent="moa_geo_cp_only")
+        geolocator = Nominatim(user_agent=MY_USER_AGENT)
         try:
-            time.sleep(1)
+            time.sleep(1.1) # Petite pause respectueuse pour l'API
             loc = geolocator.geocode(f"{q_low}, France", timeout=20, addressdetails=True)
-        except Exception:
+        except Exception as e:
+            print(f"❌ Erreur CP seul ({q_low}): {e}") # Affiche l'erreur réelle
             loc = None
 
         if not loc:
@@ -180,61 +180,38 @@ def geocode(query: str):
         postcode = addr.get("postcode", q_low)
         return (loc.latitude, loc.longitude, country, postcode)
 
-    # ================= 2) DETECTION PAYS PAR HEURISTIQUES =================
-
-    # 🇳🇱 Pays-Bas (CP 1234AB, villes NL, etc.)
-    if re.search(r"\b\d{4}[a-z]{2}\b", q_low) or any(v in q_low for v in [
-        "amsterdam", "rotterdam", "utrecht", "eindhoven", "groningen"
-    ]):
+    # ================= 2) DETECTION PAYS =================
+    # ... (On garde ta logique pays telle quelle) ...
+    if re.search(r"\b\d{4}[a-z]{2}\b", q_low) or any(v in q_low for v in ["amsterdam", "rotterdam", "utrecht", "eindhoven", "groningen"]):
         country_hint = "Netherlands"
-
-    # 🇧🇪 Belgique (B3570, CP 4 chiffres, villes BE)
-    elif (
-        re.match(r"^b\d{4}$", q_low)
-        or (re.fullmatch(r"\d{4}", q_low) and 1000 <= int(q_low) <= 9999)
-        or any(v in q_low for v in ["belg", "aarschot", "alken", "ittre", "maasmechelen", "sambreville"])
-    ):
+    elif (re.match(r"^b\d{4}$", q_low) or (re.fullmatch(r"\d{4}", q_low) and 1000 <= int(q_low) <= 9999) or any(v in q_low for v in ["belg", "aarschot", "alken", "ittre", "maasmechelen", "sambreville"])):
         country_hint = "Belgium"
-
-    # 🇱🇺 Luxembourg
     elif re.match(r"l-\d{4,5}", q_low) or "luxem" in q_low:
         country_hint = "Luxembourg"
-
-    # 🇪🇸 Espagne (Vila-real, Castellón, 12540, Espagne…)
-    elif (
-        "vila-real" in q_low or "vilareal" in q_low
-        or "castell" in q_low or "espa" in q_low
-        or "barcelone" in q_low or "barcelona" in q_low
-        or q_low.startswith("es-") or "12540" in q_low
-    ):
+    elif ("vila-real" in q_low or "vilareal" in q_low or "castell" in q_low or "espa" in q_low or "barcelone" in q_low or "barcelona" in q_low or q_low.startswith("es-") or "12540" in q_low):
         country_hint = "Spain"
-
-    # 🇮🇹 Italie
-    elif "ital" in q_low or q_low.startswith("it-") or any(v in q_low for v in [
-        "brescia", "bedizzole", "milano", "roma", "verona"
-    ]):
+    elif "ital" in q_low or q_low.startswith("it-") or any(v in q_low for v in ["brescia", "bedizzole", "milano", "roma", "verona"]):
         country_hint = "Italy"
-
-    # 🇨🇭 Suisse
     elif "suisse" in q_low or "switzerland" in q_low or "ch-" in q_low:
         country_hint = "Switzerland"
-
-    # 🇫🇷 Défaut : France
     else:
         country_hint = "France"
 
-    # ================= 3) REQUETE NOMINATIM =================
+    # ================= 3) REQUETE PRINCIPALE =================
 
-    # Si un pays est déjà écrit dans l’adresse, on ne rajoute rien
     query_full = q if has_explicit_country(q) else f"{q}, {country_hint}"
 
-    geolocator = Nominatim(user_agent="moa_geo_v19")
+    # C'EST ICI QUE TU AVAIS OUBLIÉ DE CHANGER LE NOM ! 👇
+    geolocator = Nominatim(user_agent=MY_USER_AGENT) 
+    
     try:
-        time.sleep(1)
+        time.sleep(1.1)
         loc = geolocator.geocode(query_full, timeout=20, addressdetails=True)
         if not loc:
+            print(f"⚠️ Aucun résultat pour : {query_full}")
             return None
-    except Exception:
+    except Exception as e:
+        print(f"❌ Erreur Géocodage ({query_full}): {e}") # Pour voir si c'est une erreur 403/Timeout
         return None
 
     addr = loc.raw.get("address", {})
@@ -242,25 +219,20 @@ def geocode(query: str):
     cp_res = addr.get("postcode", "")
 
     # Ajustements fins
-
-    # Vila-real -> toujours 12540 Espagne
     if "vila-real" in q_low or "vilareal" in q_low:
         cp_res = "12540"
         country_res = "Espagne"
-
-    # Pays-Bas si CP 1234AB repéré
     if re.search(r"\b\d{4}[A-Za-z]{2}\b", q):
         country_res = "Pays-Bas"
-
-    # Belgique si CP Bxxxx
     if re.match(r"^b\d{4}$", q_low):
         country_res = "Belgique"
-
-    # Luxembourg si L-xxxx
     if re.match(r"l-\d{4}", q_low):
         country_res = "Luxembourg"
 
     return (loc.latitude, loc.longitude, country_res, cp_res)
+
+
+   
 
 
 
@@ -785,130 +757,120 @@ def to_excel(df, template=TEMPLATE_PATH, start=START_ROW):
         ws.cell(i,9, r.get("Type de distance",""))
     bio = BytesIO(); wb.save(bio); bio.seek(0); return bio
 
+def to_simple(df, template="doc_base_contact_simple.xlsx", start=11):
+    """
+    Génère le fichier 'contact simple' dans le modèle :
+    Colonnes :
+      A = Raison sociale
+      B = Référent MOA
+      C = Contact MOA
+      D = Catégories
+    Les lignes commencent à start (=11).
+    """
+
+    # ouverture modèle
+    wb = load_workbook(template)
+    ws = wb.active
+
+    # on efface d'anciennes valeurs
+    for r in range(start, ws.max_row + 1):
+        for c in range(1, 5):
+            ws.cell(r, c).value = None
+
+    # remplissage
+    for i, (_, row) in enumerate(df.iterrows(), start=start):
+        ws.cell(i, 1, row.get("Raison sociale", ""))
+        ws.cell(i, 2, row.get("Référent MOA", ""))
+        ws.cell(i, 3, row.get("Contact MOA", ""))
+        ws.cell(i, 4, row.get("Catégories", ""))
+
+    # export
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
+
 
 # ===================== CARTE (Folium) =======================
-def make_map(df, base_coords, coords_dict, base_address):
-    fmap = folium.Map(location=[46.6, 2.5], zoom_start=5, tiles="CartoDB positron", control_scale=True)
+
+def get_marker_style(name, group_mode=False):
+    """
+    Définit la couleur et l'icône selon le nom de l'entreprise.
+    Retourne : (couleur, icone)
+    """
+    n = name.lower()
+    
+    # Par défaut (Bleu / Industrie)
+    color = "blue"
+    icon = "industry"
+    
+    if not group_mode:
+        return color, icon
+
+    # --- BINÔME 1 : ORANGE (Ossabois / Demathieu) ---
+    if "ossabois" in n:
+        return "orange", "industry"
+    if "demathieu" in n:
+        return "orange", "building" # On met une icône batiment pour le constructeur
+
+    # --- BINÔME 2 : VIOLET (Savare / Eiffage) ---
+    if "savare" in n:
+        return "purple", "industry"
+    if "eiffage" in n:
+        return "purple", "building"
+
+    # --- BINÔME 3 : VERT (TH / Bouygues) ---
+    if "th tech" in n or "technologies et habitats" in n:
+        return "green", "industry"
+    if "bouygues" in n:
+        return "green", "building"
+
+    return color, icon
+
+
+def make_map(df, base_coords, coords_dict, base_address, group_mode=False):
+    # Centrage initial (approximatif France)
+    fmap = folium.Map(location=[46.6, 2.5], zoom_start=6, tiles="CartoDB positron", control_scale=True)
+    
+    # Marqueur PROJET (Toujours Rouge)
     if base_coords:
         folium.Marker(base_coords, icon=folium.Icon(color="red", icon="star"),
                       popup=f"<b>Projet</b><br>{base_address}",
                       tooltip="Projet").add_to(fmap)
+    
+    # Boucle sur les entreprises
     for _, r in df.iterrows():
         name = r.get("Raison sociale","")
         c = coords_dict.get(name)
         if not c: continue
+        
         lat, lon, country = c
         addr = r.get("Adresse","")
         cp = r.get("Code postal","")
-        folium.Marker([lat,lon],
-            icon=folium.Icon(color="blue", icon="industry", prefix="fa"),
+        
+        # Récupération de la couleur et de l'icône dynamique
+        marker_color, marker_icon = get_marker_style(name, group_mode)
+
+        # Ajout du marqueur
+        folium.Marker(
+            [lat,lon],
+            icon=folium.Icon(color=marker_color, icon=marker_icon, prefix="fa"),
             popup=f"<b>{name}</b><br>{addr}<br>{cp or ''} — {country}",
-            tooltip=name).add_to(fmap)
+            tooltip=name
+        ).add_to(fmap)
+        
+        # Ajout de l'étiquette texte (toujours bleue ou adaptée ?)
+        # Ici je laisse le texte en bleu standard pour la lisibilité, 
+        # mais on peut aussi changer la couleur du texte si besoin.
         folium.map.Marker(
             [lat, lon],
             icon=DivIcon(icon_size=(180,36), icon_anchor=(0,0),
                          html=f'<div style="font-weight:600;color:#1f6feb;white-space:nowrap;'
                               f'text-shadow:0 0 3px #fff;">{name}</div>')
         ).add_to(fmap)
+        
     return fmap
 
-def map_to_html(fmap):
-    s = fmap.get_root().render().encode("utf-8")
-    bio = BytesIO(); bio.write(s); bio.seek(0); return bio
-
-# ======================== INTERFACE =========================
-st.markdown("""
-
-<style>
-
-/* ================================
-      THEME CLAIR FORCÉ
-================================ */
-html, body, .stApp {
-    background: #FFFFFF !important;
-    color: #000000 !important;
-}
-
-/* Désactivation totale du mode sombre */
-@media (prefers-color-scheme: dark) {
-    html, body, .stApp {
-        background: #FFFFFF !important;
-        color: #000000 !important;
-    }
-}
-
-/* ================================
-      TITRES - TEXTES
-================================ */
-h1, h2, h3, h4, h5, h6 {
-    color: #0B1D4F !important;
-    font-family: "Inter", sans-serif !important;
-    font-weight: 700 !important;
-}
-
-label, p, span, div, textarea, input {
-    color: #000000 !important;
-    font-family: "Inter", sans-serif !important;
-}
-
-/* ================================
-      BOUTONS (STYLE MODERNE)
-================================ */
-.stButton>button,
-.stDownloadButton>button {
-    background: #0B1D4F !important;     /* Bleu foncé */
-    color: #FFFFFF !important;          /* Texte blanc */
-    border-radius: 8px !important;
-    padding: 0.5rem 1.2rem !important;
-    border: none !important;
-    font-weight: 600 !important;
-}
-
-/* Hover */
-.stButton>button:hover,
-.stDownloadButton>button:hover {
-    opacity: 0.85 !important;
-    color: #FFFFFF !important;
-}
-
-/* Correction Streamlit : texte interne dans un <p> → forcer blanc */
-.stButton button *,
-.stDownloadButton button * {
-    color: #FFFFFF !important;
-}
-
-.stButton button p,
-.stDownloadButton button p {
-    color: #FFFFFF !important;
-}
-
-/* ================================
-      INPUTS / FILE UPLOAD
-================================ */
-.stTextInput>div>div>input,
-.stFileUploader>div>div {
-    background-color: #ffffff !important;
-    color: #000000 !important;
-}
-
-/* ================================
-      RADIOS HORIZONTALES
-================================ */
-.stRadio > div {
-    flex-direction: row !important;
-    gap: 20px !important;
-}
-
-/* ================================
-      DATAFRAME
-================================ */
-[data-testid="stDataFrame"] {
-    color: black !important;
-}
-
-</style>
-
-""", unsafe_allow_html=True)
 
 # ======================== INTERFACE =========================
 
@@ -941,15 +903,21 @@ with main_col:
 
 with side_col:
     # Panneau de droite
-    st.image("Conseil-noir.jpg", width=150)
+    st.image("Conseil-noir.jpg", width=150) # (Si vous avez cette image)
     with st.container():
         st.markdown("""<div class="css-card">""", unsafe_allow_html=True)
         st.markdown("#### ⚙️ Réglages")
         name_full = st.text_input("Nom Excel", "Sourcing_Complet")
         name_map = st.text_input("Nom Carte", "Carte_Projet")
+        
+        # --- AJOUT ICI ---
+        st.markdown("---")
+        use_groups = st.checkbox("🎨 Colorer par binômes", value=True, 
+                                 help="Si coché : Ossabois/Demathieu en Orange, Eiffage/Savare en Violet, etc.")
+        # -----------------
+        
         st.caption("Contactez JAROD en cas de bug.")
         st.markdown("""</div>""", unsafe_allow_html=True)
-
 
 # --- LOGIQUE DE TRAITEMENT ---
 if file:
@@ -988,8 +956,10 @@ if file:
 
                 with col_dl2:
                     # Carte HTML
+                    # Carte HTML
                     if base_coords:
-                        fmap = make_map(df, base_coords, coords_dict, base_address)
+                    # On ajoute "use_groups" ici 👇
+                        fmap = make_map(df, base_coords, coords_dict, base_address, group_mode=use_groups)
                         html_map = map_to_html(fmap)
                         st.download_button(
                             "🗺️ Télécharger Carte Interactive",
