@@ -871,7 +871,9 @@ def make_map(df, base_coords, coords_dict, base_address, group_mode=False):
         
     return fmap
 
-
+def map_to_html(fmap):
+    s = fmap.get_root().render().encode("utf-8")
+    bio = BytesIO(); bio.write(s); bio.seek(0); return bio
 # ======================== INTERFACE =========================
 
 # --- CSS / STYLE (On garde ton style blanc) ---
