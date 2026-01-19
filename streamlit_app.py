@@ -986,5 +986,5 @@ if file:
             st.dataframe(df)
 
             except Exception as e:
-                st.error(f"Une erreur est survenue : {e}")
+                 st.error(f"Une erreur est survenue : {e}")
 
