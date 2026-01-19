@@ -985,6 +985,6 @@ if file:
         with st.expander("Voir les données brutes"):
             st.dataframe(df)
 
-            except Exception as e:
-                 st.error(f"Une erreur est survenue : {e}")
+        except Exception as e:
+            st.error(f"Une erreur est survenue : {e}")
 
