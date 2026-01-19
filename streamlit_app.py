@@ -790,49 +790,13 @@ def to_simple(df, template="doc_base_contact_simple.xlsx", start=11):
     bio.seek(0)
     return bio
 
+# ===================== CARTE (Folium) - VERSION DYNAMIQUE =======================
 
-# ===================== CARTE (Folium) =======================
-
-def get_marker_style(name, group_mode=False):
-    """
-    Définit la couleur et l'icône selon le nom de l'entreprise.
-    Retourne : (couleur, icone)
-    """
-    n = name.lower()
-    
-    # Par défaut (Bleu / Industrie)
-    color = "blue"
-    icon = "industry"
-    
-    if not group_mode:
-        return color, icon
-
-    # --- BINÔME 1 : ORANGE (Ossabois / Demathieu) ---
-    if "ossabois" in n:
-        return "orange", "industry"
-    if "demathieu" in n:
-        return "orange", "building" # On met une icône batiment pour le constructeur
-
-    # --- BINÔME 2 : VIOLET (Savare / Eiffage) ---
-    if "savare" in n:
-        return "purple", "industry"
-    if "eiffage" in n:
-        return "purple", "building"
-
-    # --- BINÔME 3 : VERT (TH / Bouygues) ---
-    if "th tech" in n or "technologies et habitats" in n:
-        return "green", "industry"
-    if "bouygues" in n:
-        return "green", "building"
-
-    return color, icon
-
-
-def make_map(df, base_coords, coords_dict, base_address, group_mode=False):
-    # Centrage initial (approximatif France)
+def make_map(df, base_coords, coords_dict, base_address, custom_groups=None):
+    # Centrage initial
     fmap = folium.Map(location=[46.6, 2.5], zoom_start=6, tiles="CartoDB positron", control_scale=True)
     
-    # Marqueur PROJET (Toujours Rouge)
+    # Marqueur PROJET (Rouge)
     if base_coords:
         folium.Marker(base_coords, icon=folium.Icon(color="red", icon="star"),
                       popup=f"<b>Projet</b><br>{base_address}",
@@ -848,9 +812,24 @@ def make_map(df, base_coords, coords_dict, base_address, group_mode=False):
         addr = r.get("Adresse","")
         cp = r.get("Code postal","")
         
-        # Récupération de la couleur et de l'icône dynamique
-        marker_color, marker_icon = get_marker_style(name, group_mode)
-
+        # --- LOGIQUE COULEUR DYNAMIQUE ---
+        # Par défaut : Bleu (Indus) ou Vert (Constructeur) ? 
+        # Pour faire simple : Bleu par défaut, et on change si c'est dans un groupe.
+        marker_color = "blue"
+        marker_icon = "industry"
+        
+        if custom_groups:
+            if name in custom_groups.get("orange", []):
+                marker_color = "orange"
+                # On peut deviner l'icone ou laisser industry
+                marker_icon = "user" 
+            elif name in custom_groups.get("purple", []):
+                marker_color = "purple"
+                marker_icon = "user"
+            elif name in custom_groups.get("green", []):
+                marker_color = "green"
+                marker_icon = "user"
+        
         # Ajout du marqueur
         folium.Marker(
             [lat,lon],
@@ -859,9 +838,7 @@ def make_map(df, base_coords, coords_dict, base_address, group_mode=False):
             tooltip=name
         ).add_to(fmap)
         
-        # Ajout de l'étiquette texte (toujours bleue ou adaptée ?)
-        # Ici je laisse le texte en bleu standard pour la lisibilité, 
-        # mais on peut aussi changer la couleur du texte si besoin.
+        # Etiquette texte
         folium.map.Marker(
             [lat, lon],
             icon=DivIcon(icon_size=(180,36), icon_anchor=(0,0),
@@ -871,9 +848,11 @@ def make_map(df, base_coords, coords_dict, base_address, group_mode=False):
         
     return fmap
 
+# Fonction indispensable pour le téléchargement
 def map_to_html(fmap):
     s = fmap.get_root().render().encode("utf-8")
     bio = BytesIO(); bio.write(s); bio.seek(0); return bio
+
 # ======================== INTERFACE =========================
 
 # --- CSS / STYLE (On garde ton style blanc) ---
@@ -930,54 +909,81 @@ if file:
         with st.status("Traitement en cours...", expanded=True) as status:
             try:
                 st.write("🔄 Lecture et nettoyage des données...")
-                # 1. On crée le DF de base
                 base_df = process_csv_to_df(file) 
                 
                 st.write("🌍 Calcul des distances et géolocalisation...")
-                # 2. On calcule les distances (C'est ici qu'on définit 'df')
                 df, base_coords, coords_dict = compute_distances(base_df, base_address)
                 
                 status.update(label="✅ Terminé !", state="complete", expanded=False)
 
-                # --- AFFICHAGE DES RÉSULTATS ---
-                st.success(f"{len(df)} entreprises traitées.")
+            except Exception as e:
+                st.error(f"Une erreur est survenue : {e}")
+                st.stop()
 
-                # Boutons de téléchargement
-                col_dl1, col_dl2 = st.columns(2)
-                
-                with col_dl1:
-                    # Excel
-                    excel_data = to_excel(df)
-                    st.download_button(
-                        "⬇️ Télécharger Excel Complet",
-                        data=excel_data,
-                        file_name=f"{name_full}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
+        # --- CONFIGURATEUR DE GROUPES (NOUVEAU) ---
+        st.markdown("---")
+        st.subheader("🎨 Personnaliser les couleurs")
+        
+        # 1. On récupère la liste unique de tous les acteurs trouvés
+        all_actors = sorted(df["Raison sociale"].unique().tolist())
+        
+        # 2. On prépare des suggestions (L'ordi "propose", l'humain dispose)
+        # On cherche des mots clés pour pré-remplir les cases, mais vous pourrez les changer
+        def_orange = [a for a in all_actors if "ossabois" in a.lower() or "demathieu" in a.lower()]
+        def_purple = [a for a in all_actors if "savare" in a.lower() or "eiffage" in a.lower()]
+        def_green  = [a for a in all_actors if "th tech" in a.lower() or "bouygues" in a.lower()]
 
-                with col_dl2:
-                    # Carte HTML
-                    # Carte HTML
-                    if base_coords:
-                    # On ajoute "use_groups" ici 👇
-                        fmap = make_map(df, base_coords, coords_dict, base_address, group_mode=use_groups)
-                        html_map = map_to_html(fmap)
-                        st.download_button(
-                            "🗺️ Télécharger Carte Interactive",
-                            data=html_map,
-                            file_name=f"{name_map}.html",
-                            mime="text/html",
-                            use_container_width=True
-                        )
+        # 3. Les sélecteurs interactifs
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            grp_orange = st.multiselect("Groupe Orange", options=all_actors, default=def_orange)
+        with c2:
+            grp_purple = st.multiselect("Groupe Violet", options=all_actors, default=def_purple)
+        with c3:
+            grp_green = st.multiselect("Groupe Vert", options=all_actors, default=def_green)
+            
+        # On range tout ça dans un dictionnaire pour la carte
+        user_groups = {
+            "orange": grp_orange,
+            "purple": grp_purple,
+            "green": grp_green
+        }
 
-                # Aperçu visuel
-                st.markdown("---")
-                if base_coords:
-                    st_html(html_map.getvalue().decode("utf-8"), height=500)
-                
-                with st.expander("Voir les données brutes"):
-                    st.dataframe(df)
+        # --- AFFICHAGE DES RÉSULTATS ---
+        st.markdown("---")
+        st.success(f"{len(df)} entreprises traitées.")
+
+        col_dl1, col_dl2 = st.columns(2)
+        
+        with col_dl1:
+            excel_data = to_excel(df)
+            st.download_button(
+                "⬇️ Télécharger Excel Complet",
+                data=excel_data,
+                file_name=f"{name_full}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+        with col_dl2:
+            if base_coords:
+                # On passe nos groupes personnalisés à la carte
+                fmap = make_map(df, base_coords, coords_dict, base_address, custom_groups=user_groups)
+                html_map = map_to_html(fmap)
+                st.download_button(
+                    "🗺️ Télécharger Carte Interactive",
+                    data=html_map,
+                    file_name=f"{name_map}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+
+        # Aperçu
+        if base_coords:
+            st_html(html_map.getvalue().decode("utf-8"), height=500)
+        
+        with st.expander("Voir les données brutes"):
+            st.dataframe(df)
 
             except Exception as e:
                 st.error(f"Une erreur est survenue : {e}")
